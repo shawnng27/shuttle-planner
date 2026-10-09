@@ -52,7 +52,9 @@ def make_scenario(city, n_students, n_stops, buses_per_stop, walk, rng, clustere
 
 def draw_map(city, students, buses, allocation, walk, path):
     """Saves a folium map: pickups with a walking-radius circle, students coloured by bus."""
-    fmap = folium.Map(location=city.center, zoom_start=15)
+    # OpenStreetMap's own tile servers reject pages opened from disk (no Referer header), so use
+    # CARTO's OSM-based basemap, which allows them
+    fmap = folium.Map(location=city.center, zoom_start=15, tiles="CartoDB positron")
 
     for bus_id, (stop, minimum, maximum) in enumerate(buses):
         lat, lon = city.coords[stop]
