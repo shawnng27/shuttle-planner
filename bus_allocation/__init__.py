@@ -1,6 +1,6 @@
 """
-Allocates people to capacity-constrained buses within walking distance, using a
-circulation network with lower bounds.
+Allocates people to capacity-constrained buses within walking distance, minimising total
+walking, using a min-cost circulation network with lower bounds.
 
 Modules:
     - allocator:   assign(), the entry point
@@ -8,7 +8,7 @@ Modules:
     - city:        Vertex, Edge and Bus entities
     - min_heap:    indexed MinHeap used by Dijkstra
     - circulation: CirculationFlowNetwork with lower/upper bounds
-    - residual:    residual network used by Ford-Fulkerson
+    - residual:    residual network and Dijkstra augmenting paths for min-cost flow
 """
 
 from .allocator import assign

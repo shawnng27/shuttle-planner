@@ -218,14 +218,16 @@ class Graph:
         """
         Function Description:
             For each pickup point, run a distance-limited Dijkstra and collect every student
-            within max_walking_distance. A student may appear under several pickups.
+            within max_walking_distance, with their walking distance. A student may appear under
+            several pickups.
 
         Input:
             - max_walking_distance: Maximum distance D that students can walk
 
         Output:
-            students_per_pickup, where students_per_pickup[location_id] is the list of student
-            indices within D of that pickup, or None if the location has no bus
+            students_per_pickup, where students_per_pickup[location_id] is the list of
+            (student index, walking distance) pairs within D of that pickup, or None if the
+            location has no bus
 
         Time Complexity: O(L + R log L + S)
         Time Complexity Analysis: At most P <= 18 pickups, each costing O(L + R log L) for Dijkstra,
@@ -246,7 +248,7 @@ class Graph:
                 for v in self.locations:
                     if v.distance <= max_walking_distance:
                         for student_idx in v.students:
-                            reachable_students_at_pickup.append(student_idx)
+                            reachable_students_at_pickup.append((student_idx, v.distance))
 
                 students_per_pickup[pickup_loc] = reachable_students_at_pickup
 
@@ -266,7 +268,7 @@ class Graph:
         Output:
             List containing [nodes_info, edges_list, metadata] where:
                 - nodes_info = [x, z, students_start, pickups_start, buses_start, total_nodes]
-                - edges_list = list of (u, v, lower, upper) edge tuples
+                - edges_list = list of (u, v, lower, upper, cost) edge tuples
                 - metadata = [S, P, B, pickup_locations, pickup_loc_to_node, students_per_pickup, 
                              reachable_students, student_idx_to_node]
         
@@ -298,7 +300,7 @@ class Graph:
         # A student is reachable if they are within D of at least one pickup
         is_reachable = [False] * S
         for pickup_loc in pickup_locations:
-            for student_idx in students_per_pickup[pickup_loc]:
+            for student_idx, _ in students_per_pickup[pickup_loc]:
                 is_reachable[student_idx] = True
         
         # Build list of reachable students
@@ -352,14 +354,15 @@ class Graph:
         # Edge 1: x -> Students (only reachable)
         for student_idx in reachable_students:
             student_node = student_idx_to_node[student_idx]
-            edges.append((x, student_node, 0, 1))
+            edges.append((x, student_node, 0, 1, 0))
         
-        # Edge 2: Students -> every pickup within D (at most P <= 18 per student)
+        # Edge 2: Students -> every pickup within D (at most P <= 18 per student),
+        # costing the student's walking distance so the cheapest flow minimises total walking
         for pickup_loc in pickup_locations:
             pickup_node = pickup_loc_to_node[pickup_loc]
-            for student_idx in students_per_pickup[pickup_loc]:
+            for student_idx, walking_distance in students_per_pickup[pickup_loc]:
                 student_node = student_idx_to_node[student_idx]
-                edges.append((student_node, pickup_node, 0, 1))
+                edges.append((student_node, pickup_node, 0, 1, walking_distance))
         
         # Edge 3: Pickup -> Bus
         for bus_idx in range(B):
@@ -367,7 +370,7 @@ class Graph:
             pickup_loc = bus[0]
             bus_node = buses_start + bus_idx
             pickup_node = pickup_loc_to_node[pickup_loc]
-            edges.append((pickup_node, bus_node, 0, float("inf")))
+            edges.append((pickup_node, bus_node, 0, float("inf"), 0))
         
         # Edge 4: Bus -> z
         for bus_idx in range(B):
@@ -375,7 +378,7 @@ class Graph:
             min_cap = bus[1]
             max_cap = bus[2]
             bus_node = buses_start + bus_idx
-            edges.append((bus_node, z, min_cap, max_cap))
+            edges.append((bus_node, z, min_cap, max_cap, 0))
         
         nodes_info = [x, z, students_start, pickups_start, buses_start, total_nodes]
         metadata = [S, P, B, pickup_locations, pickup_loc_to_node, students_per_pickup, 
@@ -394,7 +397,7 @@ class Graph:
         
         Input:
             - nodes_info: List [x, z, students_start, pickups_start, buses_start, total_nodes]
-            - edges_list: List of (u, v, lower, upper) edge tuples
+            - edges_list: List of (u, v, lower, upper, cost) edge tuples
             - T: Required number of students (exact)
         
         Output:
@@ -416,8 +419,8 @@ class Graph:
         
         # Add all existing edges
         for edge_tuple in edges_list:
-            u, v, lower, upper = edge_tuple
-            circulation_network.add_edge(u, v, lower, upper)
+            u, v, lower, upper, cost = edge_tuple
+            circulation_network.add_edge(u, v, lower, upper, cost)
         
         # Add critical z -> x edge with (lower bound=T, upperbound=T)
         circulation_network.add_edge(z, x, T, T)
@@ -432,7 +435,7 @@ class Graph:
             which buses by analyzing flow on edges. Handles sparse student nodes (only reachable students).
         
         Input:
-            - circulation_network: CirculationFlowNetwork after successful ford_fulkerson
+            - circulation_network: CirculationFlowNetwork after successful min_cost_flow
             - nodes_info: List [x, z, students_start, pickups_start, buses_start, total_nodes]
             - metadata: List [S, P, B, pickup_locations, pickup_loc_to_node, students_per_pickup,
                         reachable_students, student_idx_to_node]

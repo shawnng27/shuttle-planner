@@ -1,4 +1,4 @@
-"""Flow network with lower and upper bounds, reduced to max-flow via a super source/sink."""
+"""Flow network with lower and upper bounds and edge costs, reduced to min-cost max-flow via a super source/sink."""
 
 from .residual import CirculationResidualNetwork, CirculationForwardEdge, CirculationBackwardEdge
 
@@ -35,16 +35,17 @@ class CirculationFlowNetwork:
             self.vertices[i] = CirculationVertex(i)
         self.edges_list = []
     
-    def add_edge(self, u, v, lower, upper):
+    def add_edge(self, u, v, lower, upper, cost=0):
         """
         Function Description:
-            Add edge with lower and upper flow bounds to the network.
+            Add edge with lower and upper flow bounds and a non-negative cost per unit of flow.
         
         Input:
             - u: Source vertex ID
             - v: Destination vertex ID
             - lower: Lower bound (minimum required flow)
             - upper: Upper bound (maximum allowed flow), can be float('inf')
+            - cost: Non-negative cost per unit of flow (default 0)
         
         Output:
             None 
@@ -55,7 +56,7 @@ class CirculationFlowNetwork:
         Aux Space Complexity: O(1)
         Aux Space Complexity Analysis: Created one CirculationEdge objsct
         """
-        edge = CirculationEdge(u, v, lower, upper)
+        edge = CirculationEdge(u, v, lower, upper, cost)
         self.vertices[u].add_edge(edge)
         self.edges_list.append(edge)
     
@@ -145,7 +146,7 @@ class CirculationFlowNetwork:
     def create_residual_network(self, source, sink):
         """
         Function Description:
-            Create residual network for Ford-Fulkerson max-flow algorithm.
+            Create residual network for the min-cost max-flow algorithm.
         
         Input:
             - source: Source vertex ID
@@ -177,10 +178,19 @@ class CirculationFlowNetwork:
         
         return residual
     
-    def ford_fulkerson(self, source, sink):
+    def min_cost_flow(self, source, sink):
         """
         Function Description:
-            Run Edmonds-Karp (BFS-based Ford-Fulkerson) to get maximum flow.
+            Find a maximum flow from source to sink with the least total cost, using successive
+            shortest paths.
+
+        Approach Description:
+            Repeatedly augment along a cheapest path in the residual network, found by Dijkstra
+            with Johnson potentials (see CirculationResidualNetwork.has_AugmentingPath). While
+            every edge cost is non-negative, the flow after each augmentation is the cheapest
+            flow of its value, so the final max flow is a min-cost max flow. Edges with lower
+            bounds only connect buses to z and z to x, which cost 0, so removing the lower
+            bounds does not change which circulation is cheapest.
         
         Input:
             - source: Source vertex ID (SS)
@@ -189,12 +199,13 @@ class CirculationFlowNetwork:
         Output:
             Maximum flow value from source to sink
         
-        Time Complexity: O(max_flow · (V + E)) for unit capacity networks, which is O(T · (S + B)) in our case
+        Time Complexity: O(max_flow · (V + E) log V), which is O(T · S log S) in our case
         Time Complexity Analysis:
-            - For unit capacity networks, there are at most max_flow augmenting paths
-            - Each BFS takes O(V + E) time
-            - In our network: max_flow = T, V = O(S + B), E = O(S + B)
-            Total: O(T · (S + B))
+            - Every augmenting path leaves the super source through x and a student edge of
+              capacity 1, so there are at most max_flow = T augmentations
+            - Each Dijkstra takes O((V + E) log V)
+            - In our network: V = O(S + B), E = O(S + B), and B <= S
+            Total: O(T · S log S)
         
         Aux Space Complexity: O(V + E)
         Aux Space Complexity Analysis: Residual network stores V vertices and 2E residual edges
@@ -272,7 +283,7 @@ class CirculationVertex:
 class CirculationEdge:
     """
     Class Description:
-        Edge in circulation flow network with lower and upper flow bounds.
+        Edge in circulation flow network with lower and upper flow bounds and a cost.
     
     Attributes:
         - u: Source vertex id
@@ -281,18 +292,20 @@ class CirculationEdge:
         - upper: Upper bound (maximum allowed flow), can be float('inf')
         - capacity: Available capacity (upper - lower after conversion)
         - flow: Current flow on this edge
+        - cost: Non-negative cost per unit of flow
     """
     
-    def __init__(self, u, v, lower, upper):
+    def __init__(self, u, v, lower, upper, cost=0):
         """
         Function Description:
-            Initialize edge with flow bounds.
+            Initialize edge with flow bounds and cost.
         
         Input:
             - u: Source vertex id
             - v: Destination vertex id
             - lower: Lower bound (minimum flow)
             - upper: Upper bound (maximum capacity), can be float('inf')
+            - cost: Non-negative cost per unit of flow (default 0)
         
         Output:
             None (creates CirculationEdge object)
@@ -301,7 +314,7 @@ class CirculationEdge:
         Time Complexity Analysis: Simple attribute initialization
         
         Aux Space Complexity: O(1)
-        Aux Space Complexity Analysis: Six attributes stored
+        Aux Space Complexity Analysis: Seven attributes stored
         """
         self.u = u
         self.v = v
@@ -309,3 +322,4 @@ class CirculationEdge:
         self.upper = upper
         self.capacity = upper  # will be adjusted during conversion
         self.flow = 0
+        self.cost = cost

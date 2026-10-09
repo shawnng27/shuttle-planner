@@ -41,14 +41,22 @@ def is_valid(L, roads, students, buses, D, T, allocation):
     return sum(riders) == T and all(lo <= n <= hi for n, (_, lo, hi) in zip(riders, buses))
 
 
-def brute_force_feasible(L, roads, students, buses, D, T):
+def total_walking(L, roads, students, buses, allocation):
+    return sum(shortest_distances(L, roads, buses[bus][0])[students[student]]
+               for student, bus in enumerate(allocation) if bus != -1)
+
+
+def brute_force_min_walking(L, roads, students, buses, D, T):
+    """Least total walking over all valid allocations, or None if there are none."""
     options = []
     for location in students:
         reachable = [b for b, bus in enumerate(buses)
                      if shortest_distances(L, roads, bus[0])[location] <= D]
         options.append([-1] + reachable)
-    return any(is_valid(L, roads, students, buses, D, T, list(combo))
-               for combo in itertools.product(*options))
+    costs = [total_walking(L, roads, students, buses, combo)
+             for combo in itertools.product(*options)
+             if is_valid(L, roads, students, buses, D, T, list(combo))]
+    return min(costs) if costs else None
 
 
 CITY_L = 16
@@ -79,6 +87,19 @@ def test_student_needed_by_farther_pickup():
     allocation = assign(L, roads, students, buses, 3, 3)
     assert allocation is not None
     assert is_valid(L, roads, students, buses, 3, 3, allocation)
+
+
+def test_nearest_people_travel():
+    # Line 0 - 1 - 2 - 3 with the only bus at 0: of the three people, the one standing at the stop goes.
+    L, roads = 4, [(0, 1, 1), (1, 2, 1), (2, 3, 1)]
+    assert assign(L, roads, [3, 1, 0], [(0, 1, 1)], 3, 1) == [-1, -1, 0]
+
+
+def test_nearer_pickup_chosen():
+    # Each person can reach both stops, so each should board the bus at their own stop.
+    L, roads = 2, [(0, 1, 4)]
+    buses = [(0, 1, 2), (1, 1, 2)]
+    assert assign(L, roads, [1, 0], buses, 4, 2) == [1, 0]
 
 
 def test_more_buses_than_travellers():
@@ -115,7 +136,10 @@ def test_matches_brute_force(seed):
     for _ in range(300):
         case = random_case(rng)
         allocation = assign(*case)
+        best = brute_force_min_walking(*case)
         if allocation is None:
-            assert not brute_force_feasible(*case), case
+            assert best is None, case
         else:
             assert is_valid(*case, allocation), (case, allocation)
+            L, roads, students, buses, _, _ = case
+            assert total_walking(L, roads, students, buses, allocation) == best, (case, allocation)

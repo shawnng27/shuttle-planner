@@ -6,8 +6,9 @@ Assigns people to shuttle buses on a real road network, where:
 - each bus must carry between its minimum and maximum number of riders, and every bus is used,
 - exactly `T` people travel in total.
 
-The allocation is found by modelling the problem as a **flow network with lower bounds**
-(circulation with demands) and solving it with a from-scratch Dijkstra and Edmonds-Karp
+Among all allocations that meet these rules, it returns one with the **least total walking**.
+The problem is modelled as a **min-cost flow network with lower bounds** (circulation with
+demands) and solved with a from-scratch Dijkstra and successive-shortest-paths
 implementation. A demo runs it on real OpenStreetMap data and draws the result on an
 interactive map.
 
@@ -42,7 +43,8 @@ assign(L, roads, students, buses, D=3, T=3)  # [1, 0, 1]
 ```
 
 `assign` returns a list where entry `i` is the bus person `i` boards (`-1` if they don't
-travel), or `None` if no valid allocation exists. `bus_allocation` uses only the Python standard
+travel), or `None` if no valid allocation exists. When several allocations are valid, the one
+returned has the smallest total walking distance from travellers to their pickup points. `bus_allocation` uses only the Python standard
 library.
 
 ## How it works
@@ -61,11 +63,15 @@ library.
    ```
 
    Each person is linked to **every** pickup within `D`, not just the nearest one. A farther
-   bus may need that person to reach its minimum.
+   bus may need that person to reach its minimum. Each `person → pickup` edge costs that
+   person's walking distance (taken from the Dijkstra runs); every other edge costs 0.
 4. **Remove lower bounds.** Each lower bound becomes a demand at its endpoints. A super source
    and super sink connect to the vertices with surplus and deficit.
-5. **Max-flow.** Edmonds-Karp (BFS Ford-Fulkerson). A valid allocation exists iff the flow
-   saturates every demand.
+5. **Min-cost max-flow.** Successive shortest paths: augment along the cheapest residual path,
+   found by Dijkstra on reduced costs with Johnson potentials. A valid allocation exists iff the
+   flow saturates every demand, and the cheapest such flow has the least total walking. The
+   lower-bounded edges cost 0, so removing the lower bounds doesn't change which flow is
+   cheapest.
 6. **Extract.** Read each traveller's pickup and bus from the edges carrying flow.
 
 ### Complexity
@@ -78,20 +84,24 @@ number of pickup points:
 | Early checks | `O(S)` |
 | Dijkstra from each pickup | `O(L + R log L)` |
 | Build flow network (`O(S)` vertices and edges) | `O(S)` |
-| Edmonds-Karp (≤ `T` augmenting paths × `O(S)` BFS) | `O(S·T)` |
-| **Total** | **`O(S·T + L + R log L)`** |
+| Min-cost flow (≤ `T` augmenting paths × `O(S log S)` Dijkstra) | `O(T·S log S)` |
+| **Total** | **`O(T·S log S + L + R log L)`** |
 
 Auxiliary space is `O(S + L + R)`.
 
 ### Performance on real data
 
-Walking network within 1.5 km of Bandar Sunway (2,583 intersections, 3,549 roads):
+Walking network within 1.5 km of Bandar Sunway (2,583 intersections, 3,549 roads), `D` = 600 m.
+"Any valid" is the earlier max-flow version, which returned the first valid allocation it found:
 
-| People | Buses | Travellers `T` | `assign` time |
-| --- | --- | --- | --- |
-| 300 | 10 | 153 | 0.01 s |
-| 1,000 | 16 | 222 | 0.06 s |
-| 3,000 | 24 | 370 | 0.32 s |
+| People | Buses | Travellers `T` | Avg. walk, any valid | Avg. walk, least walking | `assign` time |
+| --- | --- | --- | --- | --- | --- |
+| 300 | 10 | 155 | 371 m | 270 m | 0.03 s |
+| 1,000 | 16 | 244 | 374 m | 155 m | 0.16 s |
+| 3,000 | 24 | 365 | 362 m | 75 m | 0.91 s |
+
+The saving grows with the crowd because more people stand close to a stop, and the solver
+chooses which `T` people travel.
 
 ## Project structure
 
@@ -101,8 +111,8 @@ bus_allocation/        the solver (standard library only)
 ├── city_graph.py      city graph, Dijkstra, building and reading the flow network
 ├── city.py            Vertex, Edge, Bus
 ├── min_heap.py        indexed min-heap with decrease-key
-├── circulation.py     flow network with lower and upper bounds
-└── residual.py        residual network and BFS augmenting paths
+├── circulation.py     flow network with lower and upper bounds and edge costs, min-cost flow
+└── residual.py        residual network and Dijkstra (with potentials) augmenting paths
 shuttle_planner/       real-map demo
 ├── osm_loader.py      downloads an OpenStreetMap walking network and converts it
 └── demo.py            builds a scenario, runs assign, draws the map
@@ -117,8 +127,8 @@ tests/
 ```
 
 Besides hand-written edge cases, the suite checks `assign` against an exhaustive brute-force
-solver on 1,500 random small instances. Every returned allocation must be valid, and `None`
-is only accepted when no allocation exists.
+solver on 1,500 random small instances. Every returned allocation must be valid and have the
+least possible total walking, and `None` is only accepted when no allocation exists.
 
 ## Notes
 
